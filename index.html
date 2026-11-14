@@ -12,12 +12,12 @@
                 extend: {
                     colors: {
                         brand: {
-                            black: '#0a0a0a',
-                            dark: '#141414',
-                            card: '#1f1f1f',
-                            red: '#dc2626',
-                            redhover: '#b91c1c',
-                            accent: '#ef4444'
+                            black: '#050505',
+                            dark: '#111111',
+                            card: '#1a1a1a',
+                            red: '#e11d48',
+                            redhover: '#be123c',
+                            accent: '#f43f5e'
                         }
                     }
                 }
@@ -29,7 +29,7 @@
 </head>
 <body class="bg-brand-black text-slate-100 antialiased pb-28 min-h-screen">
 
-    <!-- CUSTOM MESSAGE BOX (No alert()) -->
+    <!-- CUSTOM MESSAGE BOX -->
     <div id="customModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
         <div class="bg-brand-dark border border-white/10 rounded-2xl max-w-sm w-full p-6 text-center shadow-2xl space-y-4">
             <div id="modalIcon" class="text-3xl">⚠️</div>
@@ -49,6 +49,7 @@
                 </div>
                 <p class="text-[11px] text-slate-400 font-medium">Gestione Piazzale, Officina & Carrozzeria in Tempo Reale</p>
             </div>
+            <!-- FIXED ONCLICK FUNCTION -->
             <button onclick="openNewVehicleModal()" class="bg-brand-red hover:bg-brand-redhover active:scale-95 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-lg transition flex items-center space-x-1.5 border border-red-500/30">
                 <span>+ Nuovo Arrivo</span>
             </button>
@@ -268,4 +269,413 @@
         import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
         const firebaseConfig = {
-            ap
+            apiKey: "AIzaSyArqIFmI-pel8iqWmhZR_tP0FUvZrD32Wc",
+            authDomain: "scarico-veicoli.firebaseapp.com",
+            projectId: "scarico-veicoli",
+            storageBucket: "scarico-veicoli.firebasestorage.app",
+            messagingSenderId: "313540610153",
+            appId: "1:313540610153:web:bbabd1de94e1ad18babaf8"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const vehiclesCol = collection(db, "veicoli");
+
+        let allVehicles = [];
+        let currentFilter = 'all';
+        let currentPhotos = [];
+
+        // Funzione per mostrare modale personalizzato invece di alert()
+        window.showCustomModal = function(title, message, isError = false) {
+            document.getElementById('modalTitle').innerText = title;
+            document.getElementById('modalMessage').innerText = message;
+            document.getElementById('modalIcon').innerText = isError ? "❌" : "ℹ️";
+            document.getElementById('customModal').classList.remove('hidden');
+        };
+
+        window.closeCustomModal = function() {
+            document.getElementById('customModal').classList.add('hidden');
+        };
+
+        // Ascolto in tempo reale da Firestore
+        const q = query(vehiclesCol, orderBy("createdAt", "desc"));
+        onSnapshot(q, (snapshot) => {
+            const loading = document.getElementById('loadingState');
+            if (loading) loading.classList.add('hidden');
+            allVehicles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            updateCounts();
+            renderVehicles();
+        }, (error) => {
+            const loading = document.getElementById('loadingState');
+            if (loading) loading.innerText = "Errore di connessione al database.";
+            console.error(error);
+        });
+
+        // Compressione immagini per salvataggio ottimizzato
+        window.handlePhotoUpload = async function(event) {
+            const files = Array.from(event.target.files).slice(0, 3);
+            currentPhotos = [];
+            const preview = document.getElementById('photoPreview');
+            preview.innerHTML = '<span class="text-xs text-brand-red font-bold">Ottimizzazione foto in corso...</span>';
+
+            for (const file of files) {
+                const compressed = await compressImage(file, 700, 0.65);
+                currentPhotos.push(compressed);
+            }
+            renderPhotoPreview();
+        };
+
+        function compressImage(file, maxWidth, quality) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.src = e.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const scale = Math.min(1, maxWidth / img.width);
+                        canvas.width = img.width * scale;
+                        canvas.height = img.height * scale;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        resolve(canvas.toDataURL('image/jpeg', quality));
+                    };
+                };
+            });
+        }
+
+        function renderPhotoPreview() {
+            const preview = document.getElementById('photoPreview');
+            preview.innerHTML = '';
+            currentPhotos.forEach((src) => {
+                const img = document.createElement('img');
+                img.src = src;
+                img.className = "w-16 h-16 object-cover rounded-lg border border-white/20";
+                preview.appendChild(img);
+            });
+        }
+
+        // Salvataggio / Sincronizzazione su Firebase
+        document.getElementById('vehicleForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = true;
+            saveBtn.innerText = "Salvataggio in corso...";
+
+            const editId = document.getElementById('editDocId').value;
+            const data = {
+                operator: document.getElementById('operator').value.trim(),
+                mechanic: document.getElementById('mechanic').value.trim(),
+                bodyworker: document.getElementById('bodyworker').value.trim(),
+                status: document.getElementById('vehicleStatus').value,
+                location: document.getElementById('location').value.trim(),
+                plate: document.getElementById('plate').value.trim().toUpperCase(),
+                km: document.getElementById('km').value,
+                model: document.getElementById('model').value.trim(),
+                dimensions: document.getElementById('dimensions').value.trim(),
+                origin: document.getElementById('origin').value.trim(),
+                bolla: document.getElementById('bolla').value,
+                libretto: document.getElementById('libretto').value,
+                keys: document.getElementById('keys').value,
+                firstKeyNumber: document.getElementById('firstKeyNumber').value.trim(),
+                battery: document.getElementById('battery').value.trim(),
+                adblue: document.getElementById('adblue').value.trim(),
+                bodyStatus: document.getElementById('bodyStatus').value,
+                bodyNotes: document.getElementById('bodyNotes').value.trim(),
+                tiresFront: document.getElementById('tiresFront').value.trim(),
+                tiresRear: document.getElementById('tiresRear').value.trim(),
+                notes: document.getElementById('notes').value.trim(),
+                photos: currentPhotos
+            };
+
+            try {
+                if (editId) {
+                    await updateDoc(doc(db, "veicoli", editId), data);
+                } else {
+                    data.createdAt = serverTimestamp();
+                    data.dateFormatted = new Date().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    await addDoc(vehiclesCol, data);
+                }
+                closeFormModal();
+            } catch (err) {
+                showCustomModal("Errore", "Errore durante il salvataggio: " + err.message, true);
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerText = "Salva e Sincronizza";
+            }
+        });
+
+        window.deleteVehicle = async function(id, plate) {
+            if (confirm(`Vuoi eliminare definitivamente la scheda del veicolo ${plate}?`)) {
+                try {
+                    await deleteDoc(doc(db, "veicoli", id));
+                } catch (err) {
+                    showCustomModal("Errore", "Impossibile eliminare: " + err.message, true);
+                }
+            }
+        };
+
+        window.editVehicle = function(id) {
+            const v = allVehicles.find(item => item.id === id);
+            if (!v) return;
+            document.getElementById('editDocId').value = v.id;
+            document.getElementById('modalTitle').innerText = `Modifica ${v.plate}`;
+            document.getElementById('operator').value = v.operator || '';
+            document.getElementById('mechanic').value = v.mechanic || '';
+            document.getElementById('bodyworker').value = v.bodyworker || '';
+            document.getElementById('vehicleStatus').value = v.status || 'Da controllare';
+            document.getElementById('location').value = v.location || '';
+            document.getElementById('plate').value = v.plate || '';
+            document.getElementById('km').value = v.km || '';
+            document.getElementById('model').value = v.model || '';
+            document.getElementById('dimensions').value = v.dimensions || '';
+            document.getElementById('origin').value = v.origin || '';
+            document.getElementById('bolla').value = v.bolla || 'No';
+            document.getElementById('libretto').value = v.libretto || 'No';
+            document.getElementById('keys').value = v.keys || 'Sì';
+            document.getElementById('firstKeyNumber').value = v.firstKeyNumber || '';
+            document.getElementById('battery').value = v.battery || '';
+            document.getElementById('adblue').value = v.adblue || '';
+            document.getElementById('bodyStatus').value = v.bodyStatus || 'Ottima';
+            document.getElementById('bodyNotes').value = v.bodyNotes || '';
+            document.getElementById('tiresFront').value = v.tiresFront || '';
+            document.getElementById('tiresRear').value = v.tiresRear || '';
+            document.getElementById('notes').value = v.notes || '';
+            currentPhotos = v.photos || [];
+            renderPhotoPreview();
+            document.getElementById('formModal').classList.remove('hidden');
+        };
+
+        window.openNewVehicleModal = function() {
+            document.getElementById('editDocId').value = '';
+            document.getElementById('modalTitle').innerText = 'Nuova Scheda Arrivo Veicolo';
+            document.getElementById('vehicleForm').reset();
+            currentPhotos = [];
+            document.getElementById('photoPreview').innerHTML = '';
+            document.getElementById('formModal').classList.remove('hidden');
+        };
+
+        window.closeFormModal = function() {
+            document.getElementById('formModal').classList.add('hidden');
+        };
+
+        window.zoomImage = function(src) {
+            document.getElementById('zoomedImg').src = src;
+            document.getElementById('imageModal').classList.remove('hidden');
+        };
+
+        window.setFilter = function(status) {
+            currentFilter = status;
+            ['all', 'check', 'workshop', 'body', 'tires', 'ready', 'sold'].forEach(id => {
+                const btn = document.getElementById('filt-' + id);
+                if (btn) {
+                    btn.className = "px-3 py-1.5 rounded-lg bg-white/5 text-slate-300 hover:bg-white/10 whitespace-nowrap transition";
+                }
+            });
+            let activeId = 'all';
+            if (status === 'Da controllare') activeId = 'check';
+            if (status === 'In Officina') activeId = 'workshop';
+            if (status === 'In Carrozzeria') activeId = 'body';
+            if (status === 'Reparto Gomme') activeId = 'tires';
+            if (status === 'Pronto') activeId = 'ready';
+            if (status === 'Venduto') activeId = 'sold';
+            
+            const activeBtn = document.getElementById('filt-' + activeId);
+            if (activeBtn) {
+                activeBtn.className = "px-3 py-1.5 rounded-lg bg-brand-red text-white whitespace-nowrap transition shadow-sm";
+            }
+            renderVehicles();
+        };
+
+        window.updateCounts = function() {
+            document.getElementById('count-all').innerText = allVehicles.length;
+            document.getElementById('count-check').innerText = allVehicles.filter(v => v.status === 'Da controllare').length;
+            document.getElementById('count-workshop').innerText = allVehicles.filter(v => v.status === 'In Officina').length;
+            document.getElementById('count-body').innerText = allVehicles.filter(v => v.status === 'In Carrozzeria').length;
+            document.getElementById('count-tires').innerText = allVehicles.filter(v => v.status === 'Reparto Gomme').length;
+            document.getElementById('count-ready').innerText = allVehicles.filter(v => v.status === 'Pronto').length;
+            document.getElementById('count-sold').innerText = allVehicles.filter(v => v.status === 'Venduto').length;
+        };
+
+        window.renderVehicles = function() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const list = document.getElementById('vehicleList');
+            
+            const filtered = allVehicles.filter(v => {
+                const matchStatus = currentFilter === 'all' || v.status === currentFilter;
+                const matchSearch = !search || 
+                    (v.plate && v.plate.toLowerCase().includes(search)) ||
+                    (v.model && v.model.toLowerCase().includes(search)) ||
+                    (v.mechanic && v.mechanic.toLowerCase().includes(search)) ||
+                    (v.bodyworker && v.bodyworker.toLowerCase().includes(search)) ||
+                    (v.operator && v.operator.toLowerCase().includes(search)) ||
+                    (v.notes && v.notes.toLowerCase().includes(search)) ||
+                    (v.location && v.location.toLowerCase().includes(search));
+                return matchStatus && matchSearch;
+            });
+
+            if (filtered.length === 0) {
+                list.innerHTML = `<div class="text-center py-12 text-slate-500 text-xs bg-brand-dark rounded-2xl border border-white/10">Nessun veicolo trovato.</div>`;
+                return;
+            }
+
+            list.innerHTML = filtered.map(v => {
+                let statusBg = "bg-amber-500/10 text-amber-400 border-amber-500/30";
+                if (v.status === 'In Officina') statusBg = "bg-blue-500/10 text-blue-400 border-blue-500/30";
+                if (v.status === 'In Carrozzeria') statusBg = "bg-purple-500/10 text-purple-400 border-purple-500/30";
+                if (v.status === 'Reparto Gomme') statusBg = "bg-indigo-500/10 text-indigo-400 border-indigo-500/30";
+                if (v.status === 'Pronto') statusBg = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+                if (v.status === 'Venduto') statusBg = "bg-slate-700/50 text-slate-300 border-slate-600";
+
+                let photosHtml = '';
+                if (v.photos && v.photos.length > 0) {
+                    photosHtml = `<div class="flex space-x-2 mt-3 overflow-x-auto pb-1">` + 
+                        v.photos.map(p => `<img src="${p}" onclick="zoomImage('${p}')" class="w-14 h-14 object-cover rounded-lg border border-white/20 cursor-pointer hover:opacity-85 transition">`).join('') +
+                        `</div>`;
+                }
+
+                return `
+                    <div id="card-${v.id}" class="bg-brand-dark rounded-2xl border border-white/10 shadow-xl overflow-hidden p-4 space-y-3 relative">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-mono font-black text-base md:text-lg bg-black px-2.5 py-1 rounded-xl border border-white/20 text-white tracking-wider">${v.plate}</span>
+                                    <span class="text-[11px] px-2.5 py-1 rounded-full border font-bold ${statusBg}">${v.status}</span>
+                                </div>
+                                <h3 class="font-bold text-sm text-slate-100 mt-2">${v.model}</h3>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-[11px] text-slate-400 block">${v.dateFormatted || 'Data non disponibile'}</span>
+                                <span class="text-xs font-semibold text-brand-red">${Number(v.km).toLocaleString()} Km</span>
+                            </div>
+                        </div>
+
+                        <!-- Dettagli Posizione & Operatori -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] bg-black/40 p-2.5 rounded-xl border border-white/5">
+                            <div>
+                                <span class="text-slate-400 block">Posizione</span>
+                                <span class="font-bold text-white">${v.location || 'Piazzale'}</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block">Accettazione</span>
+                                <span class="font-bold text-white">${v.operator || '-'}</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block">🔧 Meccanico</span>
+                                <span class="font-bold text-blue-400">${v.mechanic || 'Non assegnato'}</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block">🎨 Carrozziere</span>
+                                <span class="font-bold text-purple-400">${v.bodyworker || 'Non assegnato'}</span>
+                            </div>
+                        </div>
+
+                        <!-- Caratteristiche Tecniche, Chiavi e Gomme -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] bg-black/20 p-2 rounded-xl border border-white/5">
+                            <div>
+                                <span class="text-slate-400 block">Documenti / Chiave</span>
+                                <span class="text-slate-200">Bolla: <b>${v.bolla}</b> | Lib: <b>${v.libretto}</b></span>
+                                <span class="block text-brand-red font-bold mt-0.5">🔑 1ª Chiave: ${v.firstKeyNumber || 'N.D.'}</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block">Batteria & AdBlue</span>
+                                <span class="text-slate-200">Bat: ${v.battery || 'OK'} | AdB: ${v.adblue || '-'}</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block">🎨 Carrozzeria</span>
+                                <span class="text-slate-200 font-medium">${v.bodyStatus || 'Ottima'}</span>
+                                ${v.bodyNotes ? `<span class="block text-[10px] text-slate-400 italic">${v.bodyNotes}</span>` : ''}
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block">🔘 Pneumatici</span>
+                                <span class="text-slate-200 block text-[10px]">Ant: ${v.tiresFront || 'Standard'}</span>
+                                <span class="text-slate-200 block text-[10px]">Post: ${v.tiresRear || 'Standard'}</span>
+                            </div>
+                        </div>
+
+                        ${v.notes ? `<div class="text-xs bg-red-950/20 text-red-200 p-2.5 rounded-xl border border-red-500/20"><b>Note / Lavori:</b> ${v.notes}</div>` : ''}
+
+                        ${photosHtml}
+
+                        <!-- Azioni Scheda -->
+                        <div class="pt-2 flex justify-between items-center border-t border-white/10 text-xs">
+                            <div class="flex space-x-2">
+                                <button onclick="editVehicle('${v.id}')" class="bg-white/10 hover:bg-white/20 text-white font-bold px-3 py-1.5 rounded-lg transition">Modifica</button>
+                                <button onclick="exportPdf('${v.id}')" class="bg-blue-600/80 hover:bg-blue-600 text-white font-bold px-3 py-1.5 rounded-lg transition">Esporta PDF</button>
+                            </div>
+                            <button onclick="deleteVehicle('${v.id}', '${v.plate}')" class="text-red-400 hover:text-red-300 font-bold px-2 py-1 transition">Elimina</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        };
+
+        window.exportPdf = function(id) {
+            const v = allVehicles.find(item => item.id === id);
+            if (!v) return;
+
+            const element = document.createElement('div');
+            element.className = "p-6 bg-white text-slate-900 font-sans max-w-xl mx-auto space-y-4";
+            element.innerHTML = `
+                <div class="border-b-2 border-black pb-3 flex justify-between items-center">
+                    <div>
+                        <h1 class="text-xl font-black uppercase text-black">SANSONETTI COSIMO DAMIANO SRL</h1>
+                        <p class="text-xs text-slate-600">Scheda Arrivo Veicolo & Lavorazioni</p>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-xs font-bold bg-black text-white px-3 py-1 rounded">Targa: ${v.plate}</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs bg-slate-100 p-3 rounded">
+                    <div><b>Modello:</b> ${v.model}</div>
+                    <div><b>Chilometri:</b> ${Number(v.km).toLocaleString()} Km</div>
+                    <div><b>Data Arrivo:</b> ${v.dateFormatted || '-'}</div>
+                    <div><b>Reparto Attuale:</b> ${v.status}</div>
+                    <div><b>Posizione:</b> ${v.location || 'Piazzale'}</div>
+                    <div><b>Provenienza:</b> ${v.origin || '-'}</div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 text-xs bg-slate-50 p-3 rounded">
+                    <div><b>Accettazione:</b> ${v.operator || '-'}</div>
+                    <div><b>Meccanico:</b> ${v.mechanic || '-'}</div>
+                    <div><b>Carrozziere:</b> ${v.bodyworker || '-'}</div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 text-xs bg-slate-50 p-3 rounded">
+                    <div><b>Bolla:</b> ${v.bolla} | <b>Libretto:</b> ${v.libretto}</div>
+                    <div><b>Doppia Chiave:</b> ${v.keys}</div>
+                    <div><b>🔑 N° 1ª Chiave:</b> <span class="font-bold text-red-600">${v.firstKeyNumber || 'N.D.'}</span></div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-3 rounded">
+                    <div><b>Stato Batteria:</b> ${v.battery || 'OK'}</div>
+                    <div><b>AdBlue:</b> ${v.adblue || '-'}</div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-3 rounded">
+                    <div><b>🎨 Carrozzeria:</b> ${v.bodyStatus || 'Ottima'}<br/><span class="text-[10px] text-slate-600">${v.bodyNotes || ''}</span></div>
+                    <div><b>🔘 Pneumatici:</b><br/>Ant: ${v.tiresFront || '-'}<br/>Post: ${v.tiresRear || '-'}</div>
+                </div>
+
+                ${v.notes ? `<div class="text-xs bg-red-50 border border-red-200 p-3 rounded"><b>Note & Lavori Officina/Carrozzeria:</b><br/>${v.notes}</div>` : ''}
+
+                <div class="text-[10px] text-slate-400 text-center pt-4 border-t">
+                    Documento generato digitalmente - Sansonetti Cosimo Damiano S.r.l.
+                </div>
+            `;
+
+            const opt = {
+                margin:        10,
+                filename:      `Scheda_${v.plate}.pdf`,
+                image:         { type: 'jpeg', quality: 0.98 },
+                html2canvas:   { scale: 2 },
+                jsPDF:         { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            html2pdf().from(element).save();
+        };
+    </script>
+</body>
+</html>
