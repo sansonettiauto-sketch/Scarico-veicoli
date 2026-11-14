@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scarico Veicoli - Gestione Piazzale & Officina</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased pb-24">
+
+    <!-- HEADER -->
+    <header class="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white shadow-lg sticky top-0 z-40">
+        <div class="max-w-2xl mx-auto px-4 py-3.5 flex justify-between items-center">
+            <div>
+                <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" id="syncDot"></span>
+                    <h1 class="font-extrabold text-lg tracking-tight">SCARICO VEICOLI</h1>
+                </div>
+                <p class="text-[11px] text-blue-200">Piazzale, Officina & Carrozzeria in Tempo Reale</p>
+            </div>
+            <button onclick="toggleFormModal()" class="bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-md transition flex items-center space-x-1">
+                <span>+ Nuovo Arrivo</span>
+            </button>
+        </div>
+
+        <!-- BARRA DI RICERCA E FILTRI REPARTO -->
+        <div class="bg-slate-900/60 px-4 py-2.5 border-t border-white/10">
+            <div class="max-w-2xl mx-auto space-y-2">
+                <input type="text" id="searchInput" oninput="renderVehicles()" placeholder="Cerca targa (es. GH170ZZ), modello, officina, note..." class="w-full text-xs bg-white/10 text-white placeholder-slate-400 border border-white/15 rounded-xl px-3.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                <div class="flex space-x-1.5 text-[11px] font-semibold overflow-x-auto pb-1">
+                    <button onclick="setFilter('all')" id="filt-all" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white whitespace-nowrap transition">Tutti (<span id="count-all">0</span>)</button>
+                    <button onclick="setFilter('Da controllare')" id="filt-check" class="px-3 py-1.5 rounded-lg bg-white/10 text-slate-300 whitespace-nowrap transition">Da controllare (<span id="count-check">0</span>)</button>
+                    <button onclick="setFilter('In Officina')" id="filt-workshop" class="px-3 py-1.5 rounded-lg bg-white/10 text-slate-300 whitespace-nowrap transition">🔧 Officina (<span id="count-workshop">0</span>)</button>
+                    <button onclick="setFilter('Carrozzeria / Gomme')" id="filt-body" class="px-3 py-1.5 rounded-lg bg-white/10 text-slate-300 whitespace-nowrap transition">🎨 Carr/Gomme (<span id="count-body">0</span>)</button>
+                    <button onclick="setFilter('Pronto')" id="filt-ready" class="px-3 py-1.5 rounded-lg bg-white/10 text-slate-300 whitespace-nowrap transition">✅ Pronti (<span id="count-ready">0</span>)</button>
+                    <button onclick="setFilter('Venduto')" id="filt-sold" class="px-3 py-1.5 rounded-lg bg-white/10 text-slate-300 whitespace-nowrap transition">🤝 Venduti (<span id="count-sold">0</span>)</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- LISTA VEICOLI IN TEMPO REALE -->
+    <main class="max-w-2xl mx-auto p-4 space-y-4">
+        <div id="loadingState" class="text-center py-12 text-slate-500 text-xs font-medium">
+            Connessione al database in tempo reale...
+        </div>
+        <div id="vehicleList" class="space-y-4"></div>
+    </main>
+
+    <!-- MODALE INSERIMENTO / MODIFICA VEICOLO -->
+    <div id="formModal" class="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-50 hidden overflow-y-auto">
+        <div class="min-h-screen px-3 py-6 flex items-center justify-center">
+            <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                <div class="bg-slate-900 text-white px-4 py-3.5 flex justify-between items-center">
+                    <h2 id="modalTitle" class="font-bold text-sm uppercase tracking-wide">Scheda Arrivo Veicolo</h2>
+                    <button onclick="closeFormModal()" class="text-slate-400 hover:text-white text-lg font-bold px-2">&times;</button>
+                </div>
+
+                <form id="vehicleForm" class="p-4 space-y-3.5 text-xs">
+                    <input type="hidden" id="editDocId" value="">
+
+                    <!-- Operatore e Stato -->
+                    <div class="grid grid-cols-2 gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                        <div>
+                            <label class="block font-bold text-slate-600 mb-1">Operatore</label>
+                            <input type="text" id="operator" required placeholder="Es. Valerio" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-600 mb-1">Stato / Reparto</label>
+                            <select id="vehicleStatus" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 font-semibold outline-none">
+                                <option value="Da controllare">⚠️ Da controllare</option>
+                                <option value="In Officina">🔧 In Officina</option>
+                                <option value="Carrozzeria / Gomme">🎨 Carrozzeria / Gomme</option>
+                                <option value="Pronto">✅ Pronto piazzale</option>
+                                <option value="Venduto">🤝 Venduto</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Posizione / Fornitore Lavori -->
+                    <div>
+                        <label class="block font-bold text-blue-800 mb-1">📍 Posizione Attuale / Officina Assegnata</label>
+                        <input type="text" id="location" placeholder="Es. Piazzale, Officina Rossi, Gommista, Elettrauto..." class="w-full bg-blue-50/50 border border-blue-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+
+                    <!-- Identificazione Mezzo -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Targa *</label>
+                            <input type="text" id="plate" required placeholder="GH170ZZ" class="w-full uppercase font-mono font-bold text-sm bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Chilometri (Km) *</label>
+                            <input type="number" id="km" required placeholder="106239" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Modello & Allestimento *</label>
+                        <input type="text" id="model" required placeholder="Es. FORD TRANSIT cassone fisso gemellato" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Misure / Colore</label>
+                            <input type="text" id="dimensions" placeholder="Es. mis 214x324, 201 giallo" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 outline-none">
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Luogo Ritiro / Provenienza</label>
+                            <input type="text" id="origin" placeholder="Es. Porto Napoli" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 outline-none">
+                        </div>
+                    </div>
+
+                    <!-- Documenti e Chiavi -->
+                    <div class="grid grid-cols-3 gap-2 pt-1">
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Bolla</label>
+                            <select id="bolla" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-2 outline-none">
+                                <option value="No">No</option>
+                                <option value="Sì">Sì</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Libretto</label>
+                            <select id="libretto" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-2 outline-none">
+                                <option value="No">No</option>
+                                <option value="Sì">Sì</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Doppia Chiave / N°</label>
+                            <input type="text" id="keys" placeholder="Sì / N° 1" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-2 outline-none">
+                        </div>
+                    </div>
+
+                    <!-- Stato Tecnico -->
+                    <div class="grid grid-cols-2 gap-3 pt-1">
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Stato Batteria</label>
+                            <input type="text" id="battery" placeholder="Es. OK / Non carica" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 outline-none">
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">AdBlue & Carrozzeria</label>
+                            <input type="text" id="adblueBody" placeholder="Es. AdBlue Sì, carr. buona" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 outline-none">
+                        </div>
+                    </div>
+
+                    <!-- Pneumatici -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Pneumatici Anteriori</label>
+                            <input type="text" id="tiresFront" placeholder="Es. Da sostituire" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 outline-none">
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Pneumatici Posteriori</label>
+                            <input type="text" id="tiresRear" placeholder="Es. 3 Minerva 195/75/r16..." class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 outline-none">
+                        </div>
+                    </div>
+
+                    <!-- Note / Anomalie / Lavori Officina -->
+                    <div>
+                        <label class="block font-bold text-amber-700 mb-1">⚠️ Anomalie / Lavori Officina & Carrozzeria</label>
+                        <textarea id="notes" rows="3" placeholder="Segnalazioni spie, lavori da fare sul cassone, tagliando, difetti riscontrati..." class="w-full bg-amber-50/50 border border-amber-300 rounded-xl px-3 py-2 focus:ring-2 focus:ring-amber-500 outline-none"></textarea>
+                    </div>
+
+                    <!-- Caricamento Foto -->
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">📸 Foto Mezzo / Gomme (Max 3 foto)</label>
+                        <input type="file" id="photoInput" accept="image/*" multiple onchange="handlePhotoUpload(event)" class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        <div id="photoPreview" class="flex space-x-2 mt-2 overflow-x-auto"></div>
+                    </div>
+
+                    <!-- Pulsanti Azione -->
+                    <div class="pt-2 flex space-x-2">
+                        <button type="button" onclick="closeFormModal()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl transition">Annulla</button>
+                        <button type="submit" id="saveBtn" class="flex-2 w-2/3 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition">Salva e Sincronizza</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALE ZOOM FOTO -->
+    <div id="imageModal" onclick="this.classList.add('hidden')" class="fixed inset-0 bg-black/90 z-50 hidden flex items-center justify-center p-4">
+        <img id="zoomedImg" src="" class="max-h-[85vh] max-w-full rounded-xl shadow-2xl">
+    </div>
+
+    <!-- SCRIPT FIREBASE REALTIME -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyArqIFmI-pel8iqWmhZR_tP0FUvZrD32Wc",
+            authDomain: "scarico-veicoli.firebaseapp.com",
+            projectId: "scarico-veicoli",
+            storageBucket: "scarico-veicoli.firebasestorage.app",
+            messagingSenderId: "313540610153",
+            appId: "1:313540610153:web:bbabd1de94e1ad18babaf8"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const vehiclesCol = collection(db, "veicoli");
+
+        let allVehicles = [];
+        let currentFilter = 'all';
+        let currentPhotos = [];
+
+        // Ascolto in tempo reale dal database
+        const q = query(vehiclesCol, orderBy("createdAt", "desc"));
+        onSnapshot(q, (snapshot) => {
+            document.getElementById('loadingState').classList.add('hidden');
+            allVehicles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            updateCounts();
+            renderVehicles();
+        }, (error) => {
+            document.getElementById('loadingState').innerText = "Errore di connessione: verifica le regole di Firestore.";
+            console.error(error);
+        });
+
+        // Compressione immagini per salvataggio rapido in cloud
+        window.handlePhotoUpload = async function(event) {
+            const files = Array.from(event.target.files).slice(0, 3);
+            currentPhotos = [];
+            const preview = document.getElementById('photoPreview');
+            preview.innerHTML = '<span class="text-xs text-blue-600">Ottimizzazione foto in corso...</span>';
+
+            for (const file of files) {
+                const compressed = await compressImage(file, 700, 0.65);
+                currentPhotos.push(compressed);
+            }
+            renderPhotoPreview();
+        };
+
+        function compressImage(file, maxWidth, quality) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.src = e.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const scale = Math.min(1, maxWidth / img.width);
+                        canvas.width = img.width * scale;
+                        canvas.height = img.height * scale;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        resolve(canvas.toDataURL('image/jpeg', quality));
+                    };
+                };
+            });
+        }
+
+        function renderPhotoPreview() {
+            const preview = document.getElementById('photoPreview');
+            preview.innerHTML = '';
+            currentPhotos.forEach((src) => {
+                const img = document.createElement('img');
+                img.src = src;
+                img.className = "w-16 h-16 object-cover rounded-lg border border-slate-300";
+                preview.appendChild(img);
+            });
+        }
+
+        // Salvataggio su Firebase
+        document.getElementById('vehicleForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = true;
+            saveBtn.innerText = "Salvataggio in corso...";
+
+            const editId = document.getElementById('editDocId').value;
+            const data = {
+                operator: document.getElementById('operator').value.trim(),
+                status: document.getElementById('vehicleStatus').value,
+                location: document.getElementById('location').value.trim(),
+                plate: document.getElementById('plate').value.trim().toUpperCase(),
+                km: document.getElementById('km').value,
+                model: document.getElementById('model').value.trim(),
+                dimensions: document.getElementById('dimensions').value.trim(),
+                origin: document.getElementById('origin').value.trim(),
+                bolla: document.getElementById('bolla').value,
+                libretto: document.getElementById('libretto').value,
+                keys: document.getElementById('keys').value.trim(),
+                battery: document.getElementById('battery').value.trim(),
+                adblueBody: document.getElementById('adblueBody').value.trim(),
+                tiresFront: document.getElementById('tiresFront').value.trim(),
+                tiresRear: document.getElementById('tiresRear').value.trim(),
+                notes: document.getElementById('notes').value.trim(),
+                photos: currentPhotos
+            };
+
+            try {
+                if (editId) {
+                    await updateDoc(doc(db, "veicoli", editId), data);
+                } else {
+                    data.createdAt = serverTimestamp();
+                    data.dateFormatted = new Date().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    await addDoc(vehiclesCol, data);
+                }
+                closeFormModal();
+            } catch (err) {
+                alert("Errore durante il salvataggio: " + err.message);
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerText = "Salva e Sincronizza";
+            }
+        });
+
+        window.deleteVehicle = async function(id, plate) {
+            if (confirm(`Vuoi eliminare definitivamente la scheda del veicolo ${plate}?`)) {
+                await deleteDoc(doc(db, "veicoli", id));
+            }
+        };
+
+        window.editVehicle = function(id) {
+            const v = allVehicles.find(item => item.id === id);
+            if (!v) return;
+            document.getElementById('editDocId').value = v.id;
+            document.getElementById('modalTitle').innerText = `Modifica ${v.plate}`;
+            document.getElementById('operator').value = v.operator || '';
+            document.getElementById('vehicleStatus').value = v.status || 'Da controllare';
+            document.getElementById('location').value = v.location || '';
+            document.getElementById('plate').value = v.plate || '';
+            document.getElementById('km').value = v.km || '';
+            document.getElementById('model').value = v.model || '';
+            document.getElementById('dimensions').value = v.dimensions || '';
+            document.getElementById('origin').value = v.origin || '';
+            document.getElementById('bolla').value = v.bolla || 'No';
+            document.getElementById('libretto').value = v.libretto || 'No';
+            document.getElementById('keys').value = v.keys || '';
+            document.getElementById('battery').value = v.battery || '';
+            document.getElementById('adblueBody').value = v.adblueBody || '';
+            document.getElementById('tiresFront').value = v.tiresFront || '';
+            document.getElementById('tiresRear').value = v.tiresRear || '';
+            document.getElementById('notes').value = v.notes || '';
+            currentPhotos = v.photos || [];
+            renderPhotoPreview();
+            document.getElementById('formModal').classList.remove('hidden');
+        };
+
+        window.shareWhatsApp = function(id) {
+            const v = allVehicles.find(item => item.id === id);
+            if (!v) return;
+            const text = `*SCHEDA VEICOLO (${v.status.toUpperCase()})*\n` +
+                `🚛 *${v.plate}* - ${v.model}\n` +
+                (v.location ? `📌 Posizione: ${v.location}\n` : '') +
+                `📏 Misure/Colore: ${v.dimensions || '-'}\n` +
+                `🛣️ Km: ${Number(v.km).toLocaleString('it-IT')}\n` +
+                `📍 Ritiro: ${v.origin || '-'}\n` +
+                `📄 Bolla: ${v.bolla} | Libretto: ${v.libretto} | Chiavi: ${v.keys || '-'}\n` +
+                `🔋 Batteria: ${v.battery || '-'} | ${v.adblueBody || '-'}\n` +
+                `🛞 Gomme Ant: ${v.tiresFront || '-'}\n` +
+                `🛞 Gomme Post: ${v.tiresRear || '-'}\n` +
+                (v.notes ? `⚠️ *Note / Lavori:* ${v.notes}\n` : '') +
+                `👤 Operatore: ${v.operator}`;
+            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+        };
+
+        window.exportVehiclePDF = function(id) {
+            const el = document.getElementById(`card-${id}`);
+            const v = allVehicles.find(item => item.id === id);
+            html2pdf().from(el).save(`Scheda_${v.plate}.pdf`);
+        };
+
+        function updateCounts() {
+            document.getElementById('count-all').innerText = allVehicles.length;
+            document.getElementById('count-check').innerText = allVehicles.filter(v => v.status === 'Da controllare').length;
+            document.getElementById('count-workshop').innerText = allVehicles.filter(v => v.status === 'In Officina').length;
+            document.getElementById('count-body').innerText = allVehicles.filter(v => v.status === 'Carrozzeria / Gomme').length;
+            document.getElementById('count-ready').innerText = allVehicles.filter(v => v.status === 'Pronto').length;
+            document.getElementById('count-sold').innerText = allVehicles.filter(v => v.status === 'Venduto').length;
+        }
+
+        window.setFilter = function(f) {
+            currentFilter = f;
+            ['all', 'check', 'workshop', 'body', 'ready', 'sold'].forEach(k => {
+                document.getElementById(`filt-${k}`).className = "px-3 py-1.5 rounded-lg bg-white/10 text-slate-300 whitespace-nowrap transition";
+            });
+            const map = {
+                'all': 'filt-all',
+                'Da controllare': 'filt-check',
+                'In Officina': 'filt-workshop',
+                'Carrozzeria / Gomme': 'filt-body',
+                'Pronto': 'filt-ready',
+                'Venduto': 'filt-sold'
+            };
+            document.getElementById(map[f]).className = "px-3 py-1.5 rounded-lg bg-blue-600 text-white whitespace-nowrap transition";
+            renderVehicles();
+        };
+
+        function getBadgeStyle(status) {
+            switch(status) {
+                case 'Pronto': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                case 'In Officina': return 'bg-blue-100 text-blue-800 border-blue-200';
+                case 'Carrozzeria / Gomme': return 'bg-purple-100 text-purple-800 border-purple-200';
+                case 'Venduto': return 'bg-slate-200 text-slate-700 border-slate-300';
+                default: return 'bg-amber-100 text-amber-800 border-amber-200';
+            }
+        }
+
+        window.renderVehicles = function() {
+            const list = document.getElementById('vehicleList');
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            list.innerHTML = '';
+
+            const filtered = allVehicles.filter(v => {
+                const matchStatus = currentFilter === 'all' || v.status === currentFilter;
+                const matchText = (v.plate + ' ' + v.model + ' ' + (v.location || '') + ' ' + (v.notes || '') + ' ' + (v.operator || '')).toLowerCase().includes(search);
+                return matchStatus && matchText;
+            });
+
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="text-center py-12 text-slate-400 text-xs">Nessun veicolo in questo reparto. Tocca "+ Nuovo Arrivo" per inserirne uno.</div>';
+                return;
+            }
+
+            filtered.forEach(v => {
+                const statusBadge = getBadgeStyle(v.status);
+
+                const photosHtml = (v.photos && v.photos.length > 0)
+                    ? `<div class="grid grid-cols-3 gap-2 pt-2">${v.photos.map(p => `<img src="${p}" onclick="zoomPhoto('${p}')" class="w-full h-24 object-cover rounded-xl border border-slate-200 cursor-pointer">`).join('')}</div>`
+                    : '';
+
+                const notesHtml = v.notes
+                    ? `<div class="bg-amber-50 border-l-4 border-amber-500 p-2.5 rounded-r-xl text-xs text-amber-950"><span class="font-bold">⚠️ Lavori / Note:</span> ${v.notes}</div>`
+                    : '';
+
+                const locationHtml = v.location
+                    ? `<span class="inline-block mt-1 text-[11px] font-semibold bg-blue-50 text-blue-800 px-2 py-0.5 rounded-md border border-blue-100">📌 ${v.location}</span>`
+                    : '';
+
+                const card = document.createElement('div');
+                card.id = `card-${v.id}`;
+                card.className = "bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3";
+                card.innerHTML = `
+                    <div class="flex justify-between items-start border-b border-slate-100 pb-2.5">
+                        <div>
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <span class="font-mono font-extrabold text-base bg-slate-900 text-white px-2.5 py-0.5 rounded-lg tracking-wider">${v.plate}</span>
+                                <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${statusBadge}">${v.status}</span>
+                            </div>
+                            <h3 class="font-bold text-slate-900 text-sm mt-1.5">${v.model}</h3>
+                            <p class="text-[11px] text-slate-500">${v.dimensions ? v.dimensions + ' • ' : ''}Km ${Number(v.km).toLocaleString('it-IT')}</p>
+                            ${locationHtml}
+                        </div>
+                        <div class="text-right text-[10px] text-slate-400">
+                            <p class="font-bold text-slate-600">👤 ${v.operator || 'Operatore'}</p>
+                            <p>${v.dateFormatted || ''}</p>
+                        </div>
+                    </div>
+
+                    ${photosHtml}
+
+                    <div class="grid grid-cols-3 gap-1.5 text-center bg-slate-50 p-2 rounded-xl border border-slate-100 text-[11px]">
+                        <div><span class="text-slate-400 block text-[10px]">Bolla</span><strong class="${v.bolla === 'Sì' ? 'text-emerald-600' : 'text-rose-600'}">${v.bolla}</strong></div>
+                        <div class="border-x border-slate-200"><span class="text-slate-400 block text-[10px]">Libretto</span><strong class="${v.libretto === 'Sì' ? 'text-emerald-600' : 'text-rose-600'}">${v.libretto}</strong></div>
+                        <div><span class="text-slate-400 block text-[10px]">Chiavi</span><strong class="text-slate-800">${v.keys || '-'}</strong></div>
+                    </div>
+
+                    <div class="space-y-1 text-xs text-slate-700">
+                        ${v.origin ? `<p><span class="font-semibold text-slate-500">🚚 Ritiro:</span> ${v.origin}</p>` : ''}
+                        <p><span class="font-semibold text-slate-500">🔋 Batteria / Stato:</span> ${v.battery || '-'} ${v.adblueBody ? '• ' + v.adblueBody : ''}</p>
+                        <p><span class="font-semibold text-slate-500">🛞 Gomme Ant:</span> ${v.tiresFront || '-'}</p>
+                        <p><span class="font-semibold text-slate-500">🛞 Gomme Post:</span> ${v.tiresRear || '-'}</p>
+                    </div>
+
+                    ${notesHtml}
+
+                    <div class="flex justify-between items-center pt-2 border-t border-slate-100 text-[11px] font-bold">
+                        <div class="flex space-x-3">
+                            <button onclick="shareWhatsApp('${v.id}')" class="text-emerald-600 hover:underline">Invia WA</button>
+                            <button onclick="exportVehiclePDF('${v.id}')" class="text-slate-600 hover:underline">PDF</button>
+                        </div>
+                        <div class="flex space-x-3">
+                            <button onclick="editVehicle('${v.id}')" class="text-blue-600 hover:underline">Modifica</button>
+                            <button onclick="deleteVehicle('${v.id}', '${v.plate}')" class="text-rose-600 hover:underline">Elimina</button>
+                        </div>
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+        };
+
+        window.toggleFormModal = function() {
+            document.getElementById('vehicleForm').reset();
+            document.getElementById('editDocId').value = '';
+            document.getElementById('modalTitle').innerText = 'Nuovo Arrivo Veicolo';
+            currentPhotos = [];
+            document.getElementById('photoPreview').innerHTML = '';
+            document.getElementById('formModal').classList.remove('hidden');
+        };
+
+        window.closeFormModal = function() {
+            document.getElementById('formModal').classList.add('hidden');
+        };
+
+        window.zoomPhoto = function(src) {
+            document.getElementById('zoomedImg').src = src;
+            document.getElementById('imageModal').classList.remove('hidden');
+        };
+    </script>
+</body>
+</html>
